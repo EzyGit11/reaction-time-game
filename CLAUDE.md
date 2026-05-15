@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Single-file browser game: `reaction-game.html`. No build step, no dependencies, no package manager. Open the file directly in a browser or serve it with any static server.
+Single-file browser game: `index.html`. No build step, no dependencies, no package manager. Open the file directly in a browser or serve it with any static server.
 
 To serve locally:
 ```
@@ -28,7 +28,7 @@ IDLE → WAITING → SQUARE_APPEARING → SQUARE_VISIBLE → WAITING → ... →
 ```
 All input handlers guard on `phase` before acting. `onMiss(type)` accepts `'slow'` (timeout) or `'misclick'` (background click) to show different feedback.
 
-**Input handling** — one `addClickAndTouch(gameArea, handler)` listener uses `getBoundingClientRect()` coordinate comparison to decide hit vs miss. There is no separate listener on `#square`. This avoids all event propagation / `stopPropagation` reliability issues.
+**Input handling** — one `addPointerHandler(gameArea, handler)` listener using `pointerdown` uses `getBoundingClientRect()` coordinate comparison to decide hit vs miss. There is no separate listener on `#square`. This avoids all event propagation / `stopPropagation` reliability issues and works correctly for both mouse and touch.
 
 **Difficulty curve** (`calcDisplayTime(round)`):
 - Round 1: 1000ms
