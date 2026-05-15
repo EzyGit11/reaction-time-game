@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Security: block all external resources; prevent iframe embedding -->
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none';">
 <title>Reaction Time</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -346,7 +349,15 @@
   const LS_REACT = 'rtg_best_reaction';
   const LS_AVG   = 'rtg_best_avg';
 
-  function lsGet(k) { try { const v = localStorage.getItem(k); return v === null ? null : Number(v); } catch(_) { return null; } }
+  // Values are always non-negative integers; reject Infinity, NaN, floats, negatives.
+  function lsGet(k) {
+    try {
+      const v = localStorage.getItem(k);
+      if (v === null) return null;
+      const n = Number(v);
+      return (Number.isInteger(n) && n >= 0) ? n : null;
+    } catch(_) { return null; }
+  }
   function lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch(_) {} }
 
   // ── DOM refs ──
@@ -379,6 +390,17 @@
 
   // ── Sound ──
   let audioCtx = null;
+
+  // Call on first confirmed user gesture so AudioContext is created while the
+  // gesture stack is still active — avoids browser autoplay policy blocking it
+  // when playSound() is later called from a setTimeout callback.
+  function initAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(_) {}
+    } else if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+  }
 
   function playSound(type) {
     try {
@@ -630,8 +652,9 @@
   }
 
   // ── Hit logic ──
+  // Note: no stopPropagation needed — hit detection is coordinate-based on the
+  // single gameArea listener, not event-propagation-based. See addPointerHandler below.
   function onHit(e) {
-    e.stopPropagation();
     if (phase !== 'SQUARE_VISIBLE') return;
     clearTimers();
 
@@ -865,12 +888,15 @@
   }
 
   // ── Event listeners ──
-  function addClickAndTouch(el, fn) {
-    el.addEventListener('click', fn);
-    el.addEventListener('touchstart', function(e) { e.preventDefault(); fn(e); }, { passive: false });
+  // Single unified handler using pointerdown — works for mouse and touch without
+  // the double-fire problem that click+touchstart causes on mobile (touchstart with
+  // preventDefault() kills the synthetic click, leaving the click listener dead).
+  function addPointerHandler(el, fn) {
+    el.addEventListener('pointerdown', fn);
   }
 
-  addClickAndTouch(document.getElementById('btn-solo'), () => {
+  addPointerHandler(document.getElementById('btn-solo'), () => {
+    initAudio(); // pre-create AudioContext while gesture stack is active
     multiplayerMode = false;
     currentPlayer = 1;
     p1Results = null;
@@ -878,7 +904,8 @@
     startGame();
   });
 
-  addClickAndTouch(document.getElementById('btn-2p'), () => {
+  addPointerHandler(document.getElementById('btn-2p'), () => {
+    initAudio(); // pre-create AudioContext while gesture stack is active
     multiplayerMode = true;
     currentPlayer = 1;
     p1Results = null;
@@ -887,27 +914,27 @@
     showScreen(screenStart);
   });
 
-  addClickAndTouch(btnStart, () => {
+  addPointerHandler(btnStart, () => {
     if (phase !== 'IDLE') return;
     startGame();
   });
 
-  addClickAndTouch(btnHandoff, () => {
+  addPointerHandler(btnHandoff, () => {
     startP2();
   });
 
-  addClickAndTouch(btnRestart, () => {
+  addPointerHandler(btnRestart, () => {
     if (phase !== 'GAME_OVER') return;
     goToModeScreen();
   });
 
-  // Single handler — coordinate check is more reliable than e.target / stopPropagation
-  addClickAndTouch(gameArea, (e) => {
+  // Single handler on gameArea — coordinate-based hit detection is more reliable
+  // than e.target / stopPropagation. clientX/Y are available directly on PointerEvent.
+  addPointerHandler(gameArea, (e) => {
     if (phase !== 'SQUARE_VISIBLE') return;
-    const pt = e.touches ? e.touches[0] : e;
     const rect = square.getBoundingClientRect();
-    const hit = pt.clientX >= rect.left && pt.clientX <= rect.right &&
-                pt.clientY >= rect.top  && pt.clientY <= rect.bottom;
+    const hit = e.clientX >= rect.left && e.clientX <= rect.right &&
+                e.clientY >= rect.top  && e.clientY <= rect.bottom;
     if (hit) onHit(e); else onMiss('misclick');
   });
 
